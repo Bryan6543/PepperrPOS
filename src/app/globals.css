@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+  --pepperr-cream: #faf7f2;
+  --pepperr-ink: #1a1612;
+  --pepperr-ember: #e85d2c;
+  --pepperr-ember-dark: #c44a1f;
+  --pepperr-sage: #3d5a4a;
+  --pepperr-gold: #c9a227;
+  --pepperr-card: #ffffff;
+  --pepperr-muted: #6b6560;
+  --pepperr-border: #00000014;
+  --pepperr-border-strong: #00000026;
+}
+
+.dark {
+  color-scheme: dark;
+  --pepperr-cream: #121110;
+  --pepperr-ink: #f2ede6;
+  --pepperr-ember: #f0784a;
+  --pepperr-ember-dark: #ff935f;
+  --pepperr-sage: #6a9e82;
+  --pepperr-gold: #d4b44a;
+  --pepperr-card: #1c1b19;
+  --pepperr-muted: #a39a91;
+  --pepperr-border: #ffffff18;
+  --pepperr-border-strong: #ffffff2e;
+}
+
+@theme inline {
+  --color-pepperr-cream: var(--pepperr-cream);
+  --color-pepperr-ink: var(--pepperr-ink);
+  --color-pepperr-ember: var(--pepperr-ember);
+  --color-pepperr-ember-dark: var(--pepperr-ember-dark);
+  --color-pepperr-sage: var(--pepperr-sage);
+  --color-pepperr-gold: var(--pepperr-gold);
+  --color-pepperr-card: var(--pepperr-card);
+  --color-pepperr-muted: var(--pepperr-muted);
+  --color-pepperr-border: var(--pepperr-border);
+  --color-pepperr-border-strong: var(--pepperr-border-strong);
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  overflow-x: clip;
+}
+
+body {
+  background: var(--pepperr-cream);
+  color: var(--pepperr-ink);
+  overflow-x: clip;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-bill,
+  #printable-bill * {
+    visibility: visible;
+  }
+  #printable-bill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white !important;
+    color: black !important;
+  }
+}
