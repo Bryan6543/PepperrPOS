@@ -44,6 +44,7 @@ create sequence if not exists public.order_number_seq start with 1000 increment 
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_number int not null default nextval('public.order_number_seq') unique,
+  client_queue_id uuid,
   customer_id uuid references public.customers (id) on delete set null,
   order_type text not null check (order_type in ('dine_in', 'takeaway', 'delivery', 'scheduled')),
   scheduled_for timestamptz,
@@ -58,6 +59,9 @@ create table if not exists public.orders (
 create index if not exists orders_created_idx on public.orders (created_at desc);
 create index if not exists orders_customer_idx on public.orders (customer_id);
 create index if not exists orders_order_number_idx on public.orders (order_number desc);
+
+create unique index if not exists orders_client_queue_id_uidx on public.orders (client_queue_id)
+  where client_queue_id is not null;
 
 alter sequence public.order_number_seq owned by public.orders.order_number;
 
@@ -202,3 +206,9 @@ end $$;
 
 -- Optional: branded placeholder thumbnails on product tiles (safe to re-run).
 -- See: supabase/product-images.sql
+
+-- If you created this database before sequential order numbers existed, run:
+-- supabase/order-number-migration.sql
+
+-- Offline POS idempotent sync column (nullable; partial unique index in schema above):
+-- Existing DBs: supabase/offline-client-queue-migration.sql

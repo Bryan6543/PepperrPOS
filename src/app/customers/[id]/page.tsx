@@ -35,7 +35,15 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             {orders.map((o) => (
               <article key={o.id} className="rounded-3xl border border-pepperr-border bg-pepperr-card p-5 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <span className="font-medium text-pepperr-ink">{formatDate(o.created_at)}</span>
+                  <Link
+                    href={`/orders/${o.id}`}
+                    className="font-mono font-semibold text-pepperr-ember hover:underline"
+                  >
+                    {o.order_number != null ? `Order #${o.order_number}` : "View order"}
+                  </Link>
+                  <span className="text-pepperr-muted">{formatDate(o.created_at)}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
                   <span className="rounded-full bg-pepperr-cream px-3 py-1 text-xs font-semibold uppercase text-pepperr-muted">
                     {o.payment_method}
                   </span>

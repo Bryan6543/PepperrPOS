@@ -31,6 +31,8 @@ export type OrderRow = {
   id: string;
   /** Sequential public order number (starts at 1000). */
   order_number: number | null;
+  /** Set when order was queued offline — prevents duplicate inserts on sync retry. */
+  client_queue_id?: string | null;
   customer_id: string | null;
   order_type: OrderType;
   scheduled_for: string | null;

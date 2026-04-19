@@ -23,8 +23,11 @@ export default async function SettingsPage() {
             <code className="rounded bg-pepperr-border px-1 font-mono text-xs">{"{{company_name}}"}</code>,{" "}
             <code className="rounded bg-pepperr-border px-1 font-mono text-xs">{"{{total_lkr}}"}</code>,{" "}
             <code className="rounded bg-pepperr-border px-1 font-mono text-xs">{"{{customer_name}}"}</code>,{" "}
-            <code className="rounded bg-pepperr-border px-1 font-mono text-xs">{"{{lines_text}}"}</code>, and more (same keys
-            as the HTML bill).
+            <code className="rounded bg-pepperr-border px-1 font-mono text-xs">{"{{lines_text}}"}</code>,{" "}
+            <code className="rounded bg-pepperr-border px-1 font-mono text-xs">{"{{order_number}}"}</code>,{" "}
+            <code className="rounded bg-pepperr-border px-1 font-mono text-xs">{"{{order_number_padded}}"}</code> (e.g.
+            01042), <code className="rounded bg-pepperr-border px-1 font-mono text-xs">{"{{order_id_short}}"}</code>{" "}
+            (alias of padded number when available), and more.
           </p>
         </header>
         <SettingsClient

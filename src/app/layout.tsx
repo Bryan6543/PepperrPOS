@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { DM_Sans, Outfit } from "next/font/google";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { OfflineSyncProvider } from "@/contexts/OfflineSyncContext";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -24,7 +26,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${dmSans.variable} ${outfit.variable}`} suppressHydrationWarning>
       <body className="font-sans min-h-screen antialiased">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <OfflineSyncProvider>
+            <OfflineBanner />
+            {children}
+          </OfflineSyncProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

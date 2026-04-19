@@ -7,10 +7,11 @@ export const dynamic = "force-dynamic";
 
 export default async function PosPage() {
   const [catalog, settings] = await Promise.all([getCatalogGrouped(), getSettingsMap()]);
+  const hasLiveMenu = catalog.length > 0;
   return (
     <div className="min-h-screen min-w-0 overflow-x-clip bg-pepperr-cream">
       <BusinessHeader title="POS" />
-      <PosWorkspace catalog={catalog} settings={settings} />
+      <PosWorkspace catalog={catalog} settings={settings} hasLiveMenu={hasLiveMenu} />
     </div>
   );
 }

@@ -31,6 +31,8 @@ export async function createCheckoutOrder(input: {
   send_bill_sms: boolean;
   send_bill_email: boolean;
   send_ready_sms: boolean;
+  /** When replaying an offline queue item, pass the same id for idempotent sync. */
+  client_queue_id?: string | null;
 }): Promise<
   | {
       ok: true;
@@ -50,12 +52,35 @@ export async function createCheckoutOrder(input: {
   if (!input.lines.length) return { ok: false, error: "Cart is empty." };
 
   const admin = createAdminClient();
+
+  if (input.client_queue_id) {
+    const { data: existing, error: exErr } = await admin
+      .from("orders")
+      .select("*")
+      .eq("client_queue_id", input.client_queue_id)
+      .maybeSingle();
+    if (exErr) return { ok: false, error: exErr.message };
+    if (existing) {
+      const pr = await getOrderForPrint((existing as OrderRow).id);
+      if ("error" in pr) return { ok: false, error: pr.error };
+      const om = (existing as OrderRow).order_number;
+      return {
+        ok: true,
+        order_id: (existing as OrderRow).id,
+        order_number: typeof om === "number" ? om : null,
+        bill_html: pr.bill_html,
+        notify: {},
+      };
+    }
+  }
+
   const subtotal = input.lines.reduce((s, l) => s + l.unit_price_lkr * l.quantity, 0);
   const total = subtotal;
 
   const { data: order, error: oErr } = await admin
     .from("orders")
     .insert({
+      client_queue_id: input.client_queue_id ?? null,
       customer_id: input.customer_id,
       order_type: input.order_type,
       scheduled_for: input.scheduled_for,
@@ -290,23 +315,27 @@ export async function listOrdersPage(params: {
   const start = (page - 1) * pageSize;
   const end = start + pageSize - 1;
 
-  let q = admin
-    .from("orders")
-    .select("*, customers(name)", { count: "exact" })
-    .order("created_at", { ascending: false });
+  let q = admin.from("orders").select("*", { count: "exact" }).order("created_at", { ascending: false });
   if (params.fromIso) q = q.gte("created_at", params.fromIso);
   if (params.toIso) q = q.lte("created_at", params.toIso);
 
   const { data, error, count } = await q.range(start, end);
   if (error) throw error;
 
-  type Row = OrderRow & { customers: { name: string } | null };
-  const rows = (data ?? []) as Row[];
+  const orderRows = (data ?? []) as OrderRow[];
+  const custIds = [...new Set(orderRows.map((o) => o.customer_id).filter(Boolean))] as string[];
+  const nameById = new Map<string, string>();
+  if (custIds.length) {
+    const { data: custs, error: cErr } = await admin.from("customers").select("id, name").in("id", custIds);
+    if (cErr) throw cErr;
+    for (const c of custs ?? []) nameById.set((c as { id: string }).id, (c as { name: string }).name);
+  }
+
   return {
-    rows: rows.map((r) => {
-      const { customers, ...rest } = r;
-      return { ...(rest as OrderRow), customer_name: customers?.name ?? null };
-    }),
+    rows: orderRows.map((o) => ({
+      ...o,
+      customer_name: o.customer_id ? (nameById.get(o.customer_id) ?? null) : null,
+    })),
     total: count ?? 0,
   };
 }

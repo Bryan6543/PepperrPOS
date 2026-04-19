@@ -21,6 +21,15 @@ function toEndIso(dateStr: string | undefined): string | null {
   return endOfDay(d).toISOString();
 }
 
+function ordersQueryString(sp: { from?: string; to?: string }, pageNum: number): string {
+  const q = new URLSearchParams();
+  if (sp.from) q.set("from", sp.from);
+  if (sp.to) q.set("to", sp.to);
+  if (pageNum > 1) q.set("page", String(pageNum));
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
+
 export default async function OrdersPage({
   searchParams,
 }: {
@@ -32,6 +41,7 @@ export default async function OrdersPage({
   const toIso = toEndIso(sp.to);
   const { rows, total } = await listOrdersPage({ page, pageSize: 25, fromIso, toIso });
   const pages = Math.max(1, Math.ceil(total / 25));
+  const qBase = { from: sp.from, to: sp.to };
 
   return (
     <div className="min-h-screen bg-pepperr-cream">
@@ -48,7 +58,7 @@ export default async function OrdersPage({
         </header>
 
         <div className="rounded-3xl border border-pepperr-border bg-pepperr-card p-5 shadow-sm">
-          <OrdersDateFilter defaultFrom={sp.from ?? ""} defaultTo={sp.to ?? ""} />
+          <OrdersDateFilter key={`${sp.from ?? ""}-${sp.to ?? ""}`} defaultFrom={sp.from ?? ""} defaultTo={sp.to ?? ""} />
         </div>
 
         <div className="overflow-x-auto rounded-3xl border border-pepperr-border bg-pepperr-card shadow-sm">
@@ -97,7 +107,7 @@ export default async function OrdersPage({
           <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
             {page > 1 && (
               <Link
-                href={`/orders?${new URLSearchParams({ ...sp, page: String(page - 1) } as Record<string, string>).toString()}`}
+                href={`/orders${ordersQueryString(qBase, page - 1)}`}
                 className="rounded-full border border-pepperr-border-strong px-4 py-2 hover:bg-pepperr-ink/[0.06]"
               >
                 Previous
@@ -108,7 +118,7 @@ export default async function OrdersPage({
             </span>
             {page < pages && (
               <Link
-                href={`/orders?${new URLSearchParams({ ...sp, page: String(page + 1) } as Record<string, string>).toString()}`}
+                href={`/orders${ordersQueryString(qBase, page + 1)}`}
                 className="rounded-full border border-pepperr-border-strong px-4 py-2 hover:bg-pepperr-ink/[0.06]"
               >
                 Next

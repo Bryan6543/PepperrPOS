@@ -6,15 +6,24 @@ import { updateProductImage } from "@/actions/catalog";
 import { createCheckoutOrder, type CartLine } from "@/actions/orders";
 import { searchCustomers, createCustomer } from "@/actions/customers";
 import type { Customer, OrderType, PaymentMethod, Product } from "@/types/db";
+import { useOfflineSync } from "@/contexts/OfflineSyncContext";
+import { idbEnqueueOrder, idbLoadCatalog, idbLoadSettings, idbSaveCatalog, idbSaveSettings } from "@/lib/offline/idb";
+import { formatLkr } from "@/lib/format";
 
 type Props = {
   catalog: GroupedCatalog;
   settings: Record<string, string>;
+  /** False when the server could not load the menu (use IndexedDB cache if available). */
+  hasLiveMenu: boolean;
 };
 
 type CartEntry = { product: Product; quantity: number };
 
-export default function PosWorkspace({ catalog, settings }: Props) {
+export default function PosWorkspace({ catalog, settings, hasLiveMenu }: Props) {
+  const { isOnline, refreshPendingCount } = useOfflineSync();
+  const [catalogData, setCatalogData] = useState<GroupedCatalog>(catalog);
+  const [settingsCache, setSettingsCache] = useState<Record<string, string>>(settings);
+
   const [cart, setCart] = useState<Record<string, CartEntry>>({});
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(catalog[0]?.category.id ?? null);
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -33,10 +42,54 @@ export default function PosWorkspace({ catalog, settings }: Props) {
   const [imgProduct, setImgProduct] = useState<Product | null>(null);
   const [imgUrl, setImgUrl] = useState("");
 
+  useEffect(() => {
+    if (catalog.length) {
+      setCatalogData(catalog);
+      void idbSaveCatalog(catalog);
+      setActiveCategoryId((prev) => {
+        const ids = new Set(catalog.flatMap((g) => [g.category.id]));
+        if (prev && ids.has(prev)) return prev;
+        return catalog[0]?.category.id ?? null;
+      });
+    }
+  }, [catalog]);
+
+  useEffect(() => {
+    if (Object.keys(settings).length) {
+      setSettingsCache(settings);
+      void idbSaveSettings(settings);
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    void (async () => {
+      if (!hasLiveMenu) {
+        const c = await idbLoadCatalog();
+        if (c?.length) {
+          setCatalogData(c);
+          setActiveCategoryId((prev) => {
+            const ids = new Set(c.flatMap((g) => [g.category.id]));
+            if (prev && ids.has(prev)) return prev;
+            return c[0]?.category.id ?? null;
+          });
+        }
+      }
+    })();
+  }, [hasLiveMenu]);
+
+  useEffect(() => {
+    void (async () => {
+      if (!Object.keys(settings).length) {
+        const s = await idbLoadSettings();
+        if (s && Object.keys(s).length) setSettingsCache(s);
+      }
+    })();
+  }, [settings]);
+
   const activeProducts = useMemo(() => {
-    const g = catalog.find((c) => c.category.id === activeCategoryId);
+    const g = catalogData.find((c) => c.category.id === activeCategoryId);
     return g?.products ?? [];
-  }, [catalog, activeCategoryId]);
+  }, [catalogData, activeCategoryId]);
 
   const subtotal = useMemo(() => {
     return Object.values(cart).reduce((s, e) => s + e.product.price_lkr * e.quantity, 0);
@@ -44,6 +97,10 @@ export default function PosWorkspace({ catalog, settings }: Props) {
 
   useEffect(() => {
     if (!custQuery.trim()) {
+      setCustHits([]);
+      return;
+    }
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
       setCustHits([]);
       return;
     }
@@ -102,7 +159,41 @@ export default function PosWorkspace({ catalog, settings }: Props) {
       setStatus("Pick a date and time for the future order.");
       return;
     }
+    const offline = !isOnline || (typeof navigator !== "undefined" && !navigator.onLine);
+
     startTransition(async () => {
+      if (offline) {
+        const client_queue_id = crypto.randomUUID();
+        const payload = {
+          lines,
+          customer_id: customer?.id ?? null,
+          order_type: orderType,
+          scheduled_for: orderType === "scheduled" ? new Date(scheduledFor).toISOString() : null,
+          payment_method: payment,
+          notes: notes.trim() || null,
+          send_bill_sms: sendBillSms,
+          send_bill_email: sendBillEmail,
+          send_ready_sms: sendReadySms,
+        };
+        await idbEnqueueOrder({
+          client_queue_id,
+          queued_at: new Date().toISOString(),
+          payload,
+        });
+        await refreshPendingCount();
+        const co = (Object.keys(settings).length ? settings : settingsCache).company_name || "Pepperr";
+        setBillHtml(buildOfflineReceiptHtml({ company: co, lines, client_queue_id, notes: notes.trim() || null }));
+        setStatus(
+          "Queued offline. It will upload to Supabase when you are back online. SMS/email run after sync if you ticked them.",
+        );
+        setCart({});
+        setNotes("");
+        setSendBillSms(false);
+        setSendBillEmail(false);
+        setSendReadySms(false);
+        return;
+      }
+
       const res = await createCheckoutOrder({
         lines,
         customer_id: customer?.id ?? null,
@@ -124,7 +215,9 @@ export default function PosWorkspace({ catalog, settings }: Props) {
         res.notify.bill_email && `Bill email: ${res.notify.bill_email}`,
         res.notify.ready_sms && `Ready SMS: ${res.notify.ready_sms}`,
       ].filter(Boolean);
-      setStatus(["Order saved.", ...bits].join(" "));
+      const head =
+        res.order_number != null ? `Order #${res.order_number} saved.` : "Order saved.";
+      setStatus([head, ...bits].filter(Boolean).join(" "));
       setCart({});
       setNotes("");
       setSendBillSms(false);
@@ -133,7 +226,8 @@ export default function PosWorkspace({ catalog, settings }: Props) {
     });
   }
 
-  const company = settings.company_name || "Pepperr";
+  const mergedSettings = Object.keys(settings).length ? settings : settingsCache;
+  const company = mergedSettings.company_name || "Pepperr";
 
   return (
     <div className="mx-auto box-border min-w-0 max-w-[1600px] space-y-4 px-3 pb-16 pt-3 sm:px-4 sm:pt-4 lg:px-6">
@@ -231,6 +325,7 @@ export default function PosWorkspace({ catalog, settings }: Props) {
           )}
           {!customer && (
             <NewCustomerInline
+              allowCreate={isOnline && (typeof navigator === "undefined" || navigator.onLine)}
               onCreated={(c) => {
                 setCustomer(c);
                 setCustQuery(c.name);
@@ -238,11 +333,16 @@ export default function PosWorkspace({ catalog, settings }: Props) {
               }}
             />
           )}
+          {!isOnline && (
+            <p className="mt-2 text-xs text-pepperr-muted">
+              Customer search needs a connection. You can still bill saved guests or walk-in while offline.
+            </p>
+          )}
         </div>
 
         <div className="min-w-0 rounded-3xl border border-pepperr-border bg-pepperr-card p-3 shadow-sm">
           <div className="-mx-1 flex gap-2 overflow-x-auto overscroll-x-contain px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {catalog.map(({ category }) => (
+            {catalogData.map(({ category }) => (
               <button
                 key={category.id}
                 type="button"
@@ -259,9 +359,10 @@ export default function PosWorkspace({ catalog, settings }: Props) {
           </div>
         </div>
 
-        {!catalog.length && (
-          <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950">
-            No menu loaded. Confirm Supabase keys and run <code className="font-mono">supabase/schema.sql</code>.
+        {!catalogData.length && (
+          <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/50 dark:text-amber-100">
+            No menu loaded. Open POS once while online to cache your menu, or confirm Supabase keys and run{" "}
+            <code className="font-mono">supabase/schema.sql</code>.
           </div>
         )}
 
@@ -452,6 +553,10 @@ export default function PosWorkspace({ catalog, settings }: Props) {
           onUrlChange={setImgUrl}
           onClose={() => setImgProduct(null)}
           onSave={async () => {
+            if (typeof navigator !== "undefined" && !navigator.onLine) {
+              alert("Connect to the internet to update product images.");
+              return;
+            }
             const r = await updateProductImage(imgProduct.id, imgUrl.trim() || null);
             if (!r.ok) {
               alert(r.error);
@@ -464,6 +569,38 @@ export default function PosWorkspace({ catalog, settings }: Props) {
       )}
     </div>
   );
+}
+
+function buildOfflineReceiptHtml(args: {
+  company: string;
+  lines: CartLine[];
+  client_queue_id: string;
+  notes: string | null;
+}): string {
+  const esc = (s: string) =>
+    s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  const rows = args.lines
+    .map(
+      (l) =>
+        `<tr><td>${esc(l.product_name)}</td><td align="right">${l.quantity}</td><td align="right">${formatLkr(
+          l.unit_price_lkr * l.quantity,
+        )}</td></tr>`,
+    )
+    .join("");
+  const sub = args.lines.reduce((s, l) => s + l.unit_price_lkr * l.quantity, 0);
+  const noteBlock = args.notes ? `<p style="font-size:13px">Notes: ${esc(args.notes)}</p>` : "";
+  return `<div style="font-family:system-ui,sans-serif;max-width:420px;margin:0 auto;padding:16px;">
+  <h1 style="font-size:20px;margin:0 0 8px">${esc(args.company)}</h1>
+  <p><strong>Offline ticket</strong> — pending cloud sync</p>
+  <p style="font-size:13px">Sync ref: <code>${esc(args.client_queue_id.slice(0, 13))}…</code></p>
+  ${noteBlock}
+  <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:14px;">
+    <thead><tr><th align="left">Item</th><th align="right">Qty</th><th align="right">Amt</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <p style="text-align:right;margin-top:12px;font-size:16px"><strong>Total ${formatLkr(sub)}</strong></p>
+  <p style="font-size:12px;color:#666">A numbered receipt will be available after sync.</p>
+</div>`;
 }
 
 function ImageUrlModal({
@@ -513,7 +650,13 @@ function ImageUrlModal({
   );
 }
 
-function NewCustomerInline({ onCreated }: { onCreated: (c: Customer) => void }) {
+function NewCustomerInline({
+  onCreated,
+  allowCreate,
+}: {
+  onCreated: (c: Customer) => void;
+  allowCreate: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -521,7 +664,13 @@ function NewCustomerInline({ onCreated }: { onCreated: (c: Customer) => void }) 
   const [busy, setBusy] = useState(false);
   if (!open) {
     return (
-      <button type="button" className="mt-3 text-sm font-medium text-pepperr-ember hover:underline" onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        className="mt-3 text-sm font-medium text-pepperr-ember hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={!allowCreate}
+        title={!allowCreate ? "Connect to create a new customer profile" : undefined}
+        onClick={() => allowCreate && setOpen(true)}
+      >
         + New customer
       </button>
     );

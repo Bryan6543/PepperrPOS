@@ -13,19 +13,23 @@ export async function getCatalogGrouped(): Promise<GroupedCatalog> {
   } catch {
     return [];
   }
-  const admin = createAdminClient();
-  const [{ data: categories, error: cErr }, { data: products, error: pErr }] = await Promise.all([
-    admin.from("categories").select("*").order("sort_order", { ascending: true }),
-    admin.from("products").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
-  ]);
-  if (cErr) throw cErr;
-  if (pErr) throw pErr;
-  const cats = (categories ?? []) as Category[];
-  const prods = (products ?? []) as Product[];
-  return cats.map((category) => ({
-    category,
-    products: prods.filter((p) => p.category_id === category.id),
-  }));
+  try {
+    const admin = createAdminClient();
+    const [{ data: categories, error: cErr }, { data: products, error: pErr }] = await Promise.all([
+      admin.from("categories").select("*").order("sort_order", { ascending: true }),
+      admin.from("products").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
+    ]);
+    if (cErr) throw cErr;
+    if (pErr) throw pErr;
+    const cats = (categories ?? []) as Category[];
+    const prods = (products ?? []) as Product[];
+    return cats.map((category) => ({
+      category,
+      products: prods.filter((p) => p.category_id === category.id),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function updateProductImage(
